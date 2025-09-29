@@ -24,9 +24,10 @@ int main (int argc, char *argv[]) {
 	double t = 0.0;
 	int e = 1;
 	bool n = false;
+	int m = MAX_MESSAGE;
 	
 	string filename = "";
-	while ((opt = getopt(argc, argv, "p:t:e:f:c")) != -1) {
+	while ((opt = getopt(argc, argv, "p:t:e:f:m:c")) != -1) {
 		switch (opt) {
 			case 'p':
 				p = atoi (optarg);
@@ -39,6 +40,9 @@ int main (int argc, char *argv[]) {
 				break;
 			case 'f':
 				filename = optarg;
+				break;
+			case 'm':
+				m = atoi (optarg);
 				break;
 			case 'c':
 				n = true;
@@ -68,7 +72,7 @@ int main (int argc, char *argv[]) {
 
 		chan = new FIFORequestChannel(name, FIFORequestChannel::CLIENT_SIDE);
 	}
-
+	
 	if (!filename.empty()) {
 		cout << "Starting file transfer of " << filename << endl;
 		auto start = chrono::high_resolution_clock::now();
@@ -81,8 +85,8 @@ int main (int argc, char *argv[]) {
 		strcpy(buf + sizeof(filemsg), filename.c_str());
 		chan->cwrite(buf, len);
 
-		int filesize;
-		chan->cread(&filesize, sizeof(int));
+		__int64_t filesize;
+		chan->cread(&filesize, sizeof(__int64_t));
 		cout << "File size: " << filesize << " bytes" << endl;
 		
 		string outpath = "received/" + filename;
@@ -92,31 +96,28 @@ int main (int argc, char *argv[]) {
 			exit(1);
 		}
 		
-		int max = MAX_MESSAGE - sizeof(filemsg) - filename.size() - 1;
-		int remaining = filesize;
-		int offset = 0;
+		__int64_t offset = 0;
+		char* recvbuf = new char[m];
 
 		cout << "Transfer starting" << endl;
-		while (remaining > 0) {
-			int chunk_size = min(max, remaining);
+		while (offset < filesize) {
+			int chunk_size = min((__int64_t)m, filesize - offset);
 
 			filemsg req(offset, chunk_size);
 			memcpy(buf, &req, sizeof(filemsg));
 			strcpy(buf + sizeof(filemsg), filename.c_str());
 
 			chan->cwrite(buf, len);
-
-			char recvbuf[MAX_MESSAGE];
 			chan->cread(recvbuf, chunk_size);
 			
 			outfile.write(recvbuf, chunk_size);
 
 			offset += chunk_size;
-			remaining -= chunk_size;
 		}
 
 		outfile.close();
 		delete[] buf;
+		delete[] recvbuf;
 
 		auto end = chrono::high_resolution_clock::now();
 		double seconds = chrono::duration<double>(end - start).count();
@@ -160,14 +161,14 @@ int main (int argc, char *argv[]) {
 	}
 	
 	// closing the channel    
-    MESSAGE_TYPE m = QUIT_MSG;
-    chan->cwrite(&m, sizeof(MESSAGE_TYPE));
+    MESSAGE_TYPE q = QUIT_MSG;
+    chan->cwrite(&q, sizeof(MESSAGE_TYPE));
 
 	if (n) {
 		delete chan;
 	}
 
-	control_chan.cwrite(&m, sizeof(MESSAGE_TYPE));
+	control_chan.cwrite(&q, sizeof(MESSAGE_TYPE));
 
 	wait(nullptr);
 }
